@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cue"
+version = "0.1.0"
+description = "Calendar Upload Engine - a Flet utility for importing text events into Google Calendar"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "flet>=0.28.0",
+  "google-api-python-client>=2.0.0",
+  "google-auth-httplib2>=0.2.0",
+  "google-auth-oauthlib>=1.2.0"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
