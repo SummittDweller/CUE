@@ -20,12 +20,13 @@ def main(page: ft.Page) -> None:
     page.scroll = ft.ScrollMode.AUTO
 
     parsed_events = []
+    line_checks: list[ft.Checkbox] = []
 
     year_field = ft.TextField(label="Year", value="2026", width=100)
     timezone_field = ft.TextField(label="Timezone", value="America/Chicago", width=220)
     duration_field = ft.TextField(label="Timed event duration (hours)", value="2.0", width=190)
     calendar_field = ft.TextField(label="Calendar ID", value="primary", width=180)
-    status = ft.Text("Ready.")
+    status = ft.Text("Ready.", selectable=True)
     input_box = ft.TextField(
         label="Paste event text",
         multiline=True,
@@ -35,6 +36,20 @@ def main(page: ft.Page) -> None:
         value=SAMPLE_FILE.read_text(encoding="utf-8") if SAMPLE_FILE.exists() else "",
     )
     preview_column = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
+    selector_status = ft.Text("Line selector ready.", selectable=True)
+    line_selector = ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, height=260)
+
+    def rebuild_line_selector(update_page: bool = True):
+        nonlocal line_checks
+        lines = [line.strip() for line in (input_box.value or "").splitlines() if line.strip()]
+        line_checks = [ft.Checkbox(label=line, value=True) for line in lines]
+        line_selector.controls = line_checks.copy()
+        selector_status.value = f"{len(lines)} pasted line(s). Checked lines will be parsed."
+        if update_page:
+            page.update()
+
+    def selected_lines() -> list[str]:
+        return [cb.label for cb in line_checks if cb.value and cb.label]
 
     def summarize_event(evt) -> ft.Control:
         pieces = [evt.title]
@@ -69,6 +84,7 @@ def main(page: ft.Page) -> None:
         if SAMPLE_FILE.exists():
             input_box.value = SAMPLE_FILE.read_text(encoding="utf-8")
             status.value = f"Loaded sample data from {SAMPLE_FILE}."
+            rebuild_line_selector(update_page=False)
         else:
             status.value = "Sample data file not found."
         page.update()
@@ -76,12 +92,42 @@ def main(page: ft.Page) -> None:
     def do_parse(_):
         nonlocal parsed_events
         try:
-            parsed_events = parse_block(input_box.value or "", year=int(year_field.value or "2026"))
-            status.value = f"Parsed {len(parsed_events)} event(s)."
+            if not line_checks:
+                rebuild_line_selector(update_page=False)
+            lines = selected_lines()
+            if not lines:
+                parsed_events = []
+                status.value = "No checked lines to parse."
+                preview_column.controls.clear()
+                page.update()
+                return
+            parsed_events = parse_block("\n".join(lines), year=int(year_field.value or "2026"))
+            status.value = f"Parsed {len(parsed_events)} checked event(s)."
             refresh_preview()
         except Exception as exc:
             status.value = f"Parse error: {exc}"
             page.update()
+
+    def select_all_lines(_):
+        for cb in line_checks:
+            cb.value = True
+        status.value = f"Selected {len(line_checks)} line(s)."
+        page.update()
+
+    def clear_all_lines(_):
+        for cb in line_checks:
+            cb.value = False
+        status.value = "Cleared all line selections."
+        page.update()
+
+    def keep_checked_lines(_):
+        lines = selected_lines()
+        input_box.value = "\n".join(lines)
+        rebuild_line_selector(update_page=False)
+        parsed_events.clear()
+        preview_column.controls.clear()
+        status.value = f"Kept {len(lines)} checked line(s) in the paste area."
+        page.update()
 
     def do_dry_run(_):
         try:
@@ -125,6 +171,9 @@ def main(page: ft.Page) -> None:
                 count += 1
             status.value = f"Imported {count} event(s) into calendar '{calendar_field.value or 'primary'}'."
             page.update()
+        except FileNotFoundError as exc:
+            status.value = "Import error: credentials.json not found. Save your Google OAuth client secrets as credentials.json in the project root, then try again."
+            page.update()
         except Exception as exc:
             status.value = f"Import error: {exc}"
             page.update()
@@ -136,9 +185,9 @@ def main(page: ft.Page) -> None:
             timezone_field,
             duration_field,
             calendar_field,
-            ft.ElevatedButton("Load sample", icon=ft.Icons.DOWNLOAD, on_click=load_sample),
-            ft.ElevatedButton("Parse", icon=ft.Icons.PLAY_ARROW, on_click=do_parse),
-            ft.ElevatedButton("Dry run", icon=ft.Icons.VISIBILITY, on_click=do_dry_run),
+            ft.Button("Load sample", icon=ft.Icons.DOWNLOAD, on_click=load_sample),
+            ft.Button("Parse", icon=ft.Icons.PLAY_ARROW, on_click=do_parse),
+            ft.Button("Dry run", icon=ft.Icons.VISIBILITY, on_click=do_dry_run),
             ft.FilledButton("Import", icon=ft.Icons.CALENDAR_MONTH, on_click=do_import),
         ]
     )
@@ -155,7 +204,20 @@ def main(page: ft.Page) -> None:
             controls=[
                 ft.Container(
                     col={"sm": 12, "md": 6},
-                    content=input_box,
+                    content=ft.Column([
+                        input_box,
+                        ft.Row(
+                            wrap=True,
+                            controls=[
+                                ft.Button("Refresh lines", icon=ft.Icons.LIST, on_click=lambda _: rebuild_line_selector()),
+                                ft.Button("Select all", icon=ft.Icons.CHECK_BOX, on_click=select_all_lines),
+                                ft.Button("Clear all", icon=ft.Icons.CHECK_BOX_OUTLINE_BLANK, on_click=clear_all_lines),
+                                ft.Button("Keep checked", icon=ft.Icons.FILTER_LIST, on_click=keep_checked_lines),
+                            ],
+                        ),
+                        selector_status,
+                        line_selector,
+                    ]),
                 ),
                 ft.Container(
                     col={"sm": 12, "md": 6},
@@ -169,10 +231,11 @@ def main(page: ft.Page) -> None:
     )
 
     if input_box.value:
-        parsed_events = parse_block(input_box.value, year=int(year_field.value))
-        status.value = f"Parsed {len(parsed_events)} event(s)."
+        rebuild_line_selector(update_page=False)
+        parsed_events = parse_block("\n".join(selected_lines()), year=int(year_field.value))
+        status.value = f"Parsed {len(parsed_events)} checked event(s)."
         refresh_preview()
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.run(main)

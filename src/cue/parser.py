@@ -22,7 +22,8 @@ URL_MD_RE = re.compile(r'\[([^\]]+)\]\((https?://[^)]+)\)')
 URL_RAW_RE = re.compile(r'https?://\S+')
 TIME_RE = re.compile(r'(?P<h>\d{1,2}):(\d{2})\s*(?P<ampm>[ap]m)', re.I)
 PAREN_RE = re.compile(r'\(([^()]*)\)')
-CITY_DIST_RE = re.compile(r'\s+[A-Z][A-Za-z .()\-]*(?:,\s*IA|\(Beaverdale\),\s*IA|IA)\s+~?\d+\s+mi(?:\s*\([^)]*\))?\s*$')
+LOCATION_TAIL_RE = re.compile(r'(?:,\s*IA|\(Beaverdale\),\s*IA|IA)\s+~?\d+\s+mi(?:\s*\([^)]*\))?\s*$')
+TITLE_LOCATION_SEP_RE = re.compile(r'^(?P<title>.+?)\.\s+(?P<tail>.+)$')
 FACEBOOK_TRAIL_RE = re.compile(r'\s+Facebook:\s*[^\n]+$', re.I)
 EXPLICIT_DATE_IN_PAREN_RE = re.compile(r'\b(?P<weekday>Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(?:(?P<month>[A-Z][a-z]{2})\s+)?(?P<day>\d{1,2})\b')
 ONLY_WEEKDAY_IN_PAREN_RE = re.compile(r'\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b')
@@ -92,7 +93,9 @@ def infer_specific_date(paren_text: str, header_month: str, start_day: int, end_
 
 def clean_summary(rest: str) -> str:
     s = rest.strip(" -—")
-    s = CITY_DIST_RE.sub("", s).strip()
+    separated = TITLE_LOCATION_SEP_RE.match(s)
+    if separated and LOCATION_TAIL_RE.search(separated.group('tail')):
+        return re.sub(r'\s+', ' ', separated.group('title')).strip(' -—')
     s = re.sub(r'\s+', ' ', s).strip(' -—')
     return s
 
